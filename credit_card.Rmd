@@ -1,0 +1,495 @@
+---
+title: "HarvardX Data Science Professional Certificate - Module 9: Capstone"
+author: "Abraham Mateos"
+date: "September 17, 2020"
+output: pdf_document
+
+runtime: Shiny
+---
+
+# Overview
+
+This project is the solution for the "Choose Your Own" Project requirement, the second part of the Module 9 - Capstone course, inside the HarvardX Data Science Professional Certificate Program.
+The main target is to devise a credit card fraud detection system, based on a machine learning algorithm, which has been approached by two methods below.
+Nowadays, we are absolutely exposed to possible fraud in the Internet through e-commerce and online purchases. For this reason, several international institutions, such as the International Monetary Fund, have set up policy procedures to ensure and ease up bank card fraud detection through online account machine learning code.
+So, in sum, this project may be a sample / resume of these proceeds carried out by the main world organizations.
+For this task, I have used all the techniques and resources learnt throughout all this program materials and courses.
+
+
+
+# Introduction
+
+The credit card fraud detection systems might be one of the main systems any banking entity sould have established inside its own software structure.
+Under certain recent American and British universities research analysis, fraud is one of the major ethical issues in the credit card industry. The main aims are, firstly, to identify the different types of credit card fraud, and, in second place, to review alternative techniques that have been employed in fraud detection. 
+The secondary target is to present, compare and analyze recently published discoveries in credit card fraud detection. This article defines common terms in credit card fraud and highlights key statistics and figures in this field. Depending on the type of fraud banks or credit card firms might face, several measures should be adopted and implemented. The proposals made in multiple documents are likely to have beneficial results and perks in terms of cost savings and time efficiency. 
+The relevance of the application of the techniques reviewed here strikes on shrinking credit card fraud crimes volume. However, there are still ethical issues when genuine credit card clients are misclassified as fraudulent. 
+
+# Aim of the project
+
+The target in this project is to devise a machine learning algorithm approached by two ways or methods.
+
+The first one is based on the computation of 2D coordinates, which have been obtained running the t-SNE function. Afterwards, the coordinates are merged and then we can plot the results into hexagonal figures to distribute fraud commitment percentages.
+Later, we calculate ROC, AUC and the cost function, in order to set up users features as variables.Since we get the matrix where all in the info is disordered, I have opted in this ste to carry out data exploration and then create correlations among the variables chosen and users features, and training a final model into this training set (evaluation into a validation set, as taught by HarvardX staff in the previous project).  
+
+The second one, the second approach to this problem, is based on a quite different approach, since I have devised the linear regression model and then opted by the decision tree method. Later, there is a quite unique feature I hope will be welcome by the staff, that is the artificial neural network. This is a tool used generally to create the links among different features and variables straight forward into a machine learning training set, and quite easy to visualize. So then, the result is a gradient boosting machine learning model to train, under the Bernouilli distribution of fraud / not fraud like the previous approach.
+And finally, after getting the final model to work through iterations, we plot the final model and come up with the AUC using the own GBM. Quite different as you may appreciate.
+
+# PROJECT 1 (first approach)
+
+# Run t-SNE to get the 2D coordinates
+
+rtsne_out <- Rtsne(as.matrix(select(data_sub, -id)), 
+                   pca = FALSE,
+                   verbose = TRUE,
+                   theta = 0.3, 
+                   max_iter = 1300, 
+                   Y_init = NULL)
+# "Class", the target, is not used to compute the 2D coordinates
+
+
+# Data post-processing ----------------------------------------------------
+
+# merge 2D coordinates with original features
+tsne_coord <- as.data.frame(rtsne_out$Y) %>%
+  cbind(select(data_sub, id)) %>%
+  left_join(data, by = 'id')
+
+
+# Plot the map and its hexagonal figure background, due to its optimal node distribution -------------------------------
+
+gg <- ggplot() +
+  labs(title = "All Frauds (white dots) in the transaction landscape (10% of data)") +
+  scale_fill_gradient(low = 'darkblue', 
+                      high = 'red', 
+                      name="Proportion\nof fraud per\nhexagon") +
+  coord_fixed(ratio = 1) +
+  theme_void() +
+  stat_summary_hex(data = tsne_coord, 
+                   aes(x = V1, y = V2, z = Class), 
+                   bins=10, 
+                   fun = mean, 
+                   alpha = 0.9) +
+  geom_point(data = filter(tsne_coord, Class == 0), 
+             aes(x = V1, y = V2), 
+             alpha = 0.3, 
+             size = 1, 
+             col = 'black') +
+  geom_point(data = filter(tsne_coord, Class == 1), 
+             aes(x = V1, y = V2), 
+             alpha = 0.9, 
+             size = 0.3, 
+             col = 'white') +
+  theme(plot.title = element_text(hjust = 0.5, 
+                                  family = 'Calibri'),
+        legend.title.align = 0.5)
+
+
+#On about 10% of the data
+
+# The hexagons show the local density of fraudulent transactions (white points). 
+# Red colors mean high density of fraud (typically > 75% of points included in the hexagon) 
+# whereas blueish colors are associated with a small fraction of fraud. 
+
+
+# User defined functions --------------------------------------------------
+
+# calculate ROC -----------------------------------------------------------
+
+calculate_roc <- function(verset, cost_of_fp, cost_of_fn, n=100) {
+  
+  tp <- function(verset, threshold) {
+    sum(verset$predicted >= threshold & verset$Class == 1)
+  }
+  
+  fp <- function(verset, threshold) {
+    sum(verset$predicted >= threshold & verset$Class == 0)
+  }
+  
+  tn <- function(verset, threshold) {
+    sum(verset$predicted < threshold & verset$Class == 0)
+  }
+  
+  fn <- function(verset, threshold) {
+    sum(verset$predicted < threshold & verset$Class == 1)
+  }
+  
+  tpr <- function(verset, threshold) {
+    sum(verset$predicted >= threshold & verset$Class == 1) / sum(verset$Class == 1)
+  }
+  
+  fpr <- function(verset, threshold) {
+    sum(verset$predicted >= threshold & verset$Class == 0) / sum(verset$Class == 0)
+  }
+  
+  cost <- function(verset, threshold, cost_of_fp, cost_of_fn) {
+    sum(verset$predicted >= threshold & verset$Class == 0) * cost_of_fp + 
+      sum(verset$predicted < threshold & verset$Class == 1) * cost_of_fn
+  }
+  fpr <- function(verset, threshold) {
+    sum(verset$predicted >= threshold & verset$Class == 0) / sum(verset$Class == 0)
+  }
+  
+  threshold_round <- function(value, threshold)
+  {
+    return (as.integer(!(value < threshold)))
+  }
+  
+  # calculate AUC
+  auc_ <- function(verset, threshold) {
+    auc(verset$Class, threshold_round(verset$predicted,threshold))
+  }
+  
+  roc <- data.frame(threshold = seq(0,1,length.out=n), tpr=NA, fpr=NA)
+  roc$tp <- sapply(roc$threshold, function(th) tp(verset, th))
+  roc$fp <- sapply(roc$threshold, function(th) fp(verset, th))
+  roc$tn <- sapply(roc$threshold, function(th) tn(verset, th))
+  roc$fn <- sapply(roc$threshold, function(th) fn(verset, th))
+  roc$tpr <- sapply(roc$threshold, function(th) tpr(verset, th))
+  roc$fpr <- sapply(roc$threshold, function(th) fpr(verset, th))
+  roc$cost <- sapply(roc$threshold, function(th) cost(verset, th, cost_of_fp, cost_of_fn))
+  roc$auc <-  sapply(roc$threshold, function(th) auc_(verset, th))
+  
+  return(roc)
+}
+
+
+# graphical representation for ROC, AUC and cost function related to the users features definition ----------------------------------------------
+
+plot_roc <- function(roc, threshold, cost_of_fp, cost_of_fn) {
+  library(gridExtra)
+  
+  norm_vec <- function(v) (v - min(v))/diff(range(v))
+  
+  idx_threshold = which.min(abs(roc$threshold-threshold))
+  
+  col_ramp <- colorRampPalette(c("green", "orange", "red", "black"))(100)
+  
+  col_by_cost <- col_ramp[ceiling(norm_vec(roc$cost) * 99) + 1]
+  
+  p_roc <- ggplot(roc, aes(fpr, tpr)) +
+    geom_line(color = rgb(0, 0, 1, alpha = 0.3)) +
+    geom_point(color = col_by_cost,
+               size = 2,
+               alpha = 0.5) +
+    labs(title = sprintf("ROC")) + xlab("FPR") + ylab("TPR") +
+    geom_hline(yintercept = roc[idx_threshold, "tpr"],
+               alpha = 0.5,
+               linetype = "dashed") +
+    geom_vline(xintercept = roc[idx_threshold, "fpr"],
+               alpha = 0.5,
+               linetype = "dashed")
+  
+  p_auc <- ggplot(roc, aes(threshold, auc)) +
+    geom_line(color = rgb(0, 0, 1, alpha = 0.3)) +
+    geom_point(color = col_by_cost,
+               size = 2,
+               alpha = 0.5) +
+    labs(title = sprintf("AUC")) +
+    geom_vline(xintercept = threshold,
+               alpha = 0.5,
+               linetype = "dashed")
+  
+  p_cost <- ggplot(roc, aes(threshold, cost)) +
+    geom_line(color = rgb(0, 0, 1, alpha = 0.3)) +
+    geom_point(color = col_by_cost,
+               size = 2,
+               alpha = 0.5) +
+    labs(title = sprintf("cost function")) +
+    geom_vline(xintercept = threshold,
+               alpha = 0.5,
+               linetype = "dashed")
+  
+  sub_title <- sprintf("threshold at %.2f - cost of FP = %d, cost of FN = %d", threshold, cost_of_fp, cost_of_fn)
+  
+  grid.arrange(
+    p_roc,
+    p_auc,
+    p_cost,
+    ncol = 2,
+    sub = textGrob(sub_title, gp = gpar(cex = 1), just = "bottom")
+  )
+}
+
+
+# function for showing the confusion matrix -------------------------------
+
+plot_confusion_matrix <- function(verset, sSubtitle) {
+  tst <- data.frame(round(verset$predicted,0), verset$Class)
+  opts <-  c("Predicted", "True")
+  names(tst) <- opts
+  cf <- plyr::count(tst)
+  cf[opts][cf[opts]==0] <- "Not Fraud"
+  cf[opts][cf[opts]==1] <- "Fraud"
+  
+  ggplot(data =  cf, mapping = aes(x = True, y = Predicted)) +
+    labs(title = "Confusion matrix", subtitle = sSubtitle) +
+    geom_tile(aes(fill = freq), colour = "grey") +
+    geom_text(aes(label = sprintf("%1.0f", freq)), vjust = 1) +
+    scale_fill_gradient(low = "lightblue", high = "blue") +
+    theme_bw() +
+    theme(legend.position = "none")
+  
+}
+
+
+# exploring the data though columns, rows, summary and table formats -------
+
+nrow(credit_data)
+
+ncol(credit_data)
+
+summary(credit_data)
+
+str(credit_data)
+
+head(credit_data, 10) %>%
+  kable( "html", 
+         escape=F, 
+         align="c") %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = F, 
+                position = "center")
+
+boxplot(credit_data$Amount)
+hist(credit_data$Amount)
+
+# There are totally 31 columns in the data. One column, `Class` is the target value; it is a binary value, can
+# have either `0` (not fraud) or `1` (fraud) value. Another two columns have clear meaning: `Amount` is the
+# amount of the transaction; `Time` is the time of the transaction. The rest of the features (28), anonymized, are
+# named from `V1` to `V28`.
+# The data is highly unbalanced with respect of `Class` variable values. There are only
+# ``r nrow(credit_data[credit_data$Class==1,])/nrow(credit_data)*100`` % of the rows with value `Class = 1`. 
+# Typically, in such cases, we can either choose to preserve the data unbalancing or use a oversampling 
+# (of the data with minority value of target variable) or undersampling (of the data with majority value of the target variable).
+# Here we will just preserve the unbalancing of the data. In terms of validation of the result, we will see that
+# usual metrix, using a confusion matrix or accuracy are not the most relevant and will be prefered alternative
+# solutions using AUC.
+
+
+# correlations ------------------------------------------------------------
+
+correlations <- cor(credit_data, method = "pearson")
+corrplot(
+  correlations,
+  number.cex = .9,
+  method = "circle",
+  type = "full",
+  tl.cex = 0.8,
+  tl.col = "black"
+)
+
+# We can observe that most of the data features are not correlated. This is because before publishing,
+# most of the features were presented to a Principal Component Analysis (PCA) algorithm.
+# The features `V1` to `V28` are most probably the Principal Components resulted after propagating
+# the real features through PCA. We do not know if the numbering of the features reflects the importance
+# of the Principal Components. This information might be checked partially using the Variable Importance
+# from Random Forest.
+
+
+# Model -------------------------------------------------------------------
+
+# After we split the data in a training and test set, we create the RF model using the training set.
+
+nrows <- nrow(credit_data)
+set.seed(314)
+indexT <- sample(1:nrow(credit_data), 0.7 * nrows)
+
+#separate train and validation set
+
+trainset = credit_data[indexT, ]
+verset = credit_data[-indexT, ]
+
+n <- names(trainset)
+rf.form <- as.formula(paste("Class ~", paste(n[!n %in% "Class"], collapse = " + ")))
+
+trainset.rf <- randomForest(rf.form, 
+                            trainset, 
+                            ntree = 100, 
+                            importance = T)
+
+
+# visualizing the variable importance -------------------------------------
+
+varimp <- data.frame(trainset.rf$importance)
+
+vi1 <- ggplot(varimp, aes(x = reorder(rownames(varimp), IncNodePurity), y = IncNodePurity)) +
+  geom_bar(stat = "identity",
+           fill = "tomato",
+           colour = "black") +
+  coord_flip() + 
+  theme_bw(base_size = 8) +
+  labs(title = "Prediction using RandomForest with 100 trees",
+       subtitle = "Variable importance (IncNodePurity)",
+       x = "Variable",
+       y = "Variable importance (IncNodePurity)")
+
+vi2 <- ggplot(varimp, aes(x = reorder(rownames(varimp), X.IncMSE), y = X.IncMSE)) +
+  geom_bar(stat = "identity",
+           fill = "lightblue",
+           colour = "black") +
+  coord_flip() + theme_bw(base_size = 8) +
+  labs(title = "Prediction using RandomForest with 100 trees",
+       subtitle = "Variable importance (%IncMSE)",
+       x = "Variable",
+       y = "Variable importance (%IncMSE)")
+
+grid.arrange(vi1, vi2, ncol = 2)
+
+
+# Prediction --------------------------------------------------------------
+
+# Let's use the trained model for prediction of the Fraud/Not Fraud Class for the test set.
+
+verset$predicted <- predict(trainset.rf ,verset)
+
+# For the threshold at 0.5, let's represent the Confusion matrix.
+
+plot_confusion_matrix(verset, "Random Forest with 100 trees")
+
+# For such a problem, where the number of TP is very small in comparison with the number of TN, 
+# the Confusion Matrix is less useful, 
+# since it is important to use a metric that include evaluation of FP and FN as well. 
+# It is important to minimize as much as possible the number of FN (Predicted: Not Fraud and True: Fraud) 
+# since their cost could be very large. Tipically AUC is used for such cases.
+
+# Let's calculate the TP, FP, TN, FN, ROC, AUC and cost for threshold with values
+# between 0 and 1 (100 values equaly distributed) and cost 1 for TN and 10 for FN.
+
+roc <- calculate_roc(verset, 1, 10, n = 100)
+
+mincost <- min(roc$cost)
+
+roc %>%
+  mutate(auc = ifelse(cost == mincost,
+                      cell_spec(sprintf("%.5f", auc),
+                                "html",
+                                color = "green",
+                                background = "lightblue",
+                                bold = T),
+                      cell_spec(sprintf("%.5f", auc),
+                                "html",
+                                color = "black",
+                                bold = F))) %>%
+  kable("html", escape = F, align = "c") %>%
+  kable_styling(bootstrap_options = "striped",
+                full_width = F,
+                position = "center") %>%
+  scroll_box(height = "600px")
+
+
+# Let's plot the ROC, AUC and cost functions for a ref. threshold of 0.3.
+
+threshold = 0.3
+renderPlot({
+d<-get(input$roc, threshold, 1, 10)
+plot(d)
+})
+
+
+# Conclusion 
+
+# The calculated accuracy is not very relevant in the conditions where there is a very large unbalance between
+# the number of `fraud` and `non-fraud` events in the dataset. In such cases, we can see a very large accuracy.
+# More relevant is the value of ROC-AUC (Area Under Curve for the Receiver Operator Characteristic). The value
+# obtained (0.93) is relativelly good, considering that we did not performed any tunning, working with default
+# RF algorithm parameters.
+
+
+# PROJECT 2 (second approach)
+
+# Data exploration / cleaning through the functions learnt throught this program courses #
+
+dim(creditcard_data)
+head(creditcard_data, 6)
+tail(creditcard_data, 6)
+
+table(creditcard_data$Class)
+summary(creditcard_data$Amount)
+names(creditcard_data)
+var(creditcard_data$Amount)
+sd(creditcard_data$Amount)
+
+
+# Data wrangling, using mainly head and scale functions which will let me scale or grow up the chosen amount to a more realistics sample to analyze #
+
+head(creditcard_data)
+creditcard_data$Amount=scale(creditcard_data$Amount)
+NewData=creditcard_data[,-c(1)]
+head(NewData)
+
+# Data modeling, coming up with the data sample, and the train (test) set and the test (validation) set #
+
+library(caTools)
+set.seed(123)
+data_sample = sample.split(NewData$Class,SplitRatio=0.80)
+train_data = subset(NewData,data_sample==TRUE)
+test_data = subset(NewData,data_sample==FALSE)
+dim(train_data)
+dim(test_data)
+
+# Logistic regression model, making use of the class and test data and the binomial distribution specification. We then use the library proper for the ROC feature, and later we make the prediction and include this into our validation set (test set) and its visualization with roc function  #
+
+Logistic_Model= glm(Class~.,test_data,family=binomial())
+summary(Logistic_Model)
+plot(Logistic_Model)
+library(pROC)
+lr.predict <- predict(Logistic_Model,train_data, probability = TRUE)
+auc.gbm = roc(test_data$Class, lr.predict, plot = TRUE, col = "blue")
+
+# Decision Tree model, where as we have been taught through the program, we can partition the credit card dataset, and solve the linear regression, as we are managing continuous input and output data #
+
+library(rpart)
+library(rpart.plot)
+decisionTree_model <- rpart(Class ~ . , creditcard_data, method = 'class')
+predicted_val <- predict(decisionTree_model, creditcard_data, type = 'class')
+probability <- predict(decisionTree_model, creditcard_data, type = 'prob')
+rpart.plot(decisionTree_model)
+
+# Artificial Neural Network, where we should analyze our test set (training set) into a neural model, in order to create a result which would fit the human mind. I have achieved this point by not reading the data into a linear description, but in a network way, linking and making sense in info nods with other data in the same variable. Later, that training result is set in our validation set (test set), giving away a result in a default case among 0.5 and 1 #
+
+library(neuralnet)
+ANN_model =neuralnet (Class~.,train_data,linear.output=FALSE)
+plot(ANN_model)
+	
+predANN=compute(ANN_model,test_data)
+resultANN=predANN$net.result
+resultANN=ifelse(resultANN>0.5,1,0)
+
+# Gradient boosting #
+
+library(gbm, quietly=TRUE)
+	
+# Training the Gradient Boosting machine model, we can apply different values to the different parameters settled down into our model #
+
+system.time(
+  model_gbm <- gbm(Class ~ .
+                      , distribution = "bernoulli"
+                      , data = rbind(train_data, test_data)
+                      , n.trees = 500
+                      , interaction.depth = 3
+                      , n.minobsinnode = 100
+                      , shrinkage = 0.01
+                      , bag.fraction = 0.5
+                      , train.fraction = nrow(train_data) / (nrow(train_data) + nrow(test_data))
+                      )
+  )
+# Then, we try to define the best iteration based on the validation set data #
+
+gbm.iter = gbm.perf(model_gbm, method = "test")
+model.influence = relative.influence(model_gbm, n.trees = gbm.iter, sort. = TRUE)
+
+# We set up the plot of the gbm model, to later calculate AUC on the test (validation set) data #
+
+renderPlot({
+d<-get(input$model_gbm)
+plot(d)
+})
+
+gbm_test = predict(model_gbm, newdata = test_data, n.trees = gbm.iter)
+gbm_auc = roc(test_data$Class, gbm_test, plot = TRUE, col = "red")
+print(gbm_auc)
+
+# Conclusion: as we can appreciate through this second approach, we have settled down the same principles but have arranged the tree model method to then create an artificial neural network in order to connect human mind features to credit cards data, gathering different data into each "variable classification". To sum up, we carry out gradient boosting, in order to apply different values to the different parameters included in our final training model, to achieve then the best iteration into our evaluation (test) set.
+
+# PD: As you may observe as well, I have included some Shiny functions in order to create an interactive explanation of both projects. Sincerely, I hope it also works for you and there may not be any functionality problem.
+
